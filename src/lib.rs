@@ -140,6 +140,8 @@ impl ArkanaCoreContract {
 
         let current_timestamp = env::block_timestamp_ms();
 
+        assert!(reward.winner.is_none(), "Reward finalized");
+
         if reward.ended_at > current_timestamp {
             panic!("Reward has not ended");
         }
