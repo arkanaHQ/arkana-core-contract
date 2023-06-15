@@ -42,6 +42,14 @@ pub struct User {
     spinwheel_wr: u8,
 }
 
+#[derive(Serialize)]
+pub struct UserOutput {
+    points: U64,
+    last_daily_claim: U64,
+    last_free_spinwheel: U64,
+    spinwheel_wr: u8,
+}
+
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
     Users,
@@ -52,11 +60,11 @@ enum StorageKey {
 #[near_bindgen]
 impl ArkanaCoreContract {
     #[init]
-    pub fn new(owner: AccountId, daily_claim_points: u64, spin_wheel_price: u64) -> Self {
+    pub fn new(owner: AccountId, daily_claim_points: U64, spin_wheel_price: U64) -> Self {
         Self {
             owner,
-            daily_claim_points,
-            spin_wheel_price,
+            daily_claim_points: daily_claim_points.0,
+            spin_wheel_price: spin_wheel_price.0,
             users: UnorderedMap::new(StorageKey::Users),
             rewards: UnorderedMap::new(StorageKey::Rewards),
             last_reward_id: 0,
@@ -92,30 +100,30 @@ impl ArkanaCoreContract {
     }
 
     #[payable]
-    pub fn buy_ticket(&mut self, reward_id: RewardId, amount: u64) {
+    pub fn buy_ticket(&mut self, reward_id: RewardId, amount: U64) {
         let predecessor_id = env::predecessor_account_id();
 
         let mut reward = self.rewards.get(&reward_id).unwrap();
 
         let mut user = self.users.get(&predecessor_id).unwrap();
 
-        if user.points < reward.price * amount {
+        if user.points < reward.price * amount.0 {
             panic!("Points insufficient");
         }
 
-        user.points -= reward.price * amount;
+        user.points -= reward.price * amount.0;
 
         reward
             .tickets
             .insert(&reward.total_tickets, &predecessor_id);
-        reward.total_tickets += amount;
+        reward.total_tickets += amount.0;
 
         self.users.insert(&predecessor_id, &user);
         self.rewards.insert(&reward_id, &reward);
     }
 
-    pub fn finalize_reward(&mut self, reward_id: RewardId) -> AccountId {
-        let mut reward = self.rewards.get(&reward_id).unwrap();
+    pub fn finalize_reward(&mut self, reward_id: U64) -> AccountId {
+        let mut reward = self.rewards.get(&reward_id.0).unwrap();
 
         let random_number = get_random_number(0) as u64 % reward.total_tickets;
 
@@ -253,7 +261,7 @@ impl ArkanaCoreContract {
         self.membership_contracts.remove(&contract_id);
     }
 
-    pub fn generate_points(&mut self, account_id: AccountId, points: Points) -> Points {
+    pub fn generate_points(&mut self, account_id: AccountId, points: U64) -> U64 {
         let predecessor_id = env::predecessor_account_id();
 
         if !self.membership_contracts.contains(&predecessor_id) {
@@ -262,16 +270,22 @@ impl ArkanaCoreContract {
 
         let mut user = self.users.get(&account_id).unwrap();
 
-        user.points += points;
+        user.points += points.0;
 
         self.users.insert(&account_id, &user);
 
-        points
+        U64(user.points)
     }
 
     // View Functions
-    pub fn get_user(&self, account_id: AccountId) -> User {
-        self.users.get(&account_id).expect("User does not exist")
+    pub fn get_user(&self, account_id: AccountId) -> UserOutput {
+        let user = self.users.get(&account_id).expect("User does not exist");
+        UserOutput {
+            points: U64(user.points),
+            last_daily_claim: U64(user.last_daily_claim),
+            last_free_spinwheel: U64(user.last_free_spinwheel),
+            spinwheel_wr: user.spinwheel_wr,
+        }
     }
 }
 
