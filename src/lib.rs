@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::UnorderedMap;
+use near_sdk::collections::{TreeMap, UnorderedMap};
 use near_sdk::json_types::U64;
-use near_sdk::{env, near_bindgen, AccountId, Balance, BorshStorageKey, PanicOnDefault, Promise};
+use near_sdk::{env, near_bindgen, AccountId, BorshStorageKey, PanicOnDefault};
 use serde::Serialize;
 
 pub type Timestamp = u64; // ms
@@ -21,14 +21,7 @@ pub struct ArkanaCoreContract {
     users: UnorderedMap<AccountId, User>,
     rewards: UnorderedMap<RewardId, Reward>,
     last_reward_id: RewardId,
-    reward_tickets: UnorderedMap<RewardId, UnorderedMap<u64, Ticket>>,
     membership_contracts: HashSet<AccountId>,
-}
-
-#[derive(BorshDeserialize, BorshSerialize)]
-pub struct Ticket {
-    owner_id: AccountId,
-    amount: u64,
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -38,6 +31,7 @@ pub struct Reward {
     ended_at: Timestamp,
     total_tickets: u64,
     winner: Option<AccountId>,
+    tickets: TreeMap<u64, AccountId>,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize)]
@@ -52,7 +46,7 @@ pub struct User {
 enum StorageKey {
     Users,
     Rewards,
-    RewardTickets,
+    Tickets { reward_id: RewardId },
 }
 
 #[near_bindgen]
@@ -64,7 +58,6 @@ impl ArkanaCoreContract {
             daily_claim_points,
             spin_wheel_price,
             users: UnorderedMap::new(StorageKey::Users),
-            reward_tickets: UnorderedMap::new(StorageKey::RewardTickets),
             rewards: UnorderedMap::new(StorageKey::Rewards),
             last_reward_id: 0,
             membership_contracts: HashSet::new(),
@@ -73,7 +66,6 @@ impl ArkanaCoreContract {
 
     #[payable]
     pub fn create_reward(&mut self, title: String, price: U64, ended_at: U64) -> RewardId {
-        let initial_storage_usage = env::storage_usage();
         let predecessor_id = env::predecessor_account_id();
 
         if predecessor_id != self.owner {
@@ -88,12 +80,13 @@ impl ArkanaCoreContract {
                 ended_at: ended_at.0,
                 total_tickets: 0,
                 winner: None,
+                tickets: TreeMap::new(StorageKey::Tickets {
+                    reward_id: (self.last_reward_id + 1),
+                }),
             },
         );
 
         self.last_reward_id += 1;
-
-        refund_deposit(env::storage_usage() - initial_storage_usage, 0);
 
         self.last_reward_id
     }
@@ -102,7 +95,7 @@ impl ArkanaCoreContract {
     pub fn buy_ticket(&mut self, reward_id: RewardId, amount: u64) {
         let predecessor_id = env::predecessor_account_id();
 
-        let reward = self.rewards.get(&reward_id).unwrap();
+        let mut reward = self.rewards.get(&reward_id).unwrap();
 
         let mut user = self.users.get(&predecessor_id).unwrap();
 
@@ -111,14 +104,32 @@ impl ArkanaCoreContract {
         }
 
         user.points -= reward.price * amount;
+
+        reward
+            .tickets
+            .insert(&reward.total_tickets, &predecessor_id);
+        reward.total_tickets += amount;
+
+        self.users.insert(&predecessor_id, &user);
+        self.rewards.insert(&reward_id, &reward);
     }
 
-    pub fn finalize_reward(&mut self, reward_id: RewardId) {}
+    pub fn finalize_reward(&mut self, reward_id: RewardId) -> AccountId {
+        let mut reward = self.rewards.get(&reward_id).unwrap();
+
+        let random_number = get_random_number(0) as u64 % reward.total_tickets;
+
+        let key_winner = reward.tickets.floor_key(&random_number).unwrap();
+        let winner = reward.tickets.get(&key_winner).unwrap();
+
+        reward.winner = Some(winner.clone());
+        reward.tickets.clear();
+
+        return winner;
+    }
 
     #[payable]
     pub fn register_account(&mut self) {
-        let initial_storage_usage = env::storage_usage();
-
         let predecessor_id = env::predecessor_account_id();
         if self.users.get(&predecessor_id).is_some() {
             panic!("Account already registered");
@@ -133,8 +144,6 @@ impl ArkanaCoreContract {
                 spinwheel_wr: 0,
             },
         );
-
-        refund_deposit(env::storage_usage() - initial_storage_usage, 0);
     }
 
     pub fn daily_claim_point(&mut self) -> Points {
@@ -266,22 +275,6 @@ impl ArkanaCoreContract {
     }
 }
 
-fn refund_deposit(storage_used: u64, extra_spend: Balance) {
-    let required_cost = env::storage_byte_cost() * Balance::from(storage_used);
-    let attached_deposit = env::attached_deposit() - extra_spend;
-
-    assert!(
-        required_cost <= attached_deposit,
-        "Must attach {} yoctoNEAR to cover storage",
-        required_cost,
-    );
-
-    let refund = attached_deposit - required_cost;
-    if refund > 1 {
-        Promise::new(env::predecessor_account_id()).transfer(refund);
-    }
-}
-
 fn get_random_number(shift_amount: u32) -> u32 {
     let mut seed = env::random_seed();
     let seed_len = seed.len();
@@ -311,28 +304,5 @@ mod tests {
             .signer_account_id(predecessor_account_id.clone())
             .predecessor_account_id(predecessor_account_id);
         builder
-    }
-
-    #[test]
-    fn set_get_message() {
-        let mut context = get_context(accounts(1));
-        // Initialize the mocked blockchain
-        testing_env!(context.build());
-
-        // Set the testing environment for the subsequent calls
-        testing_env!(context.predecessor_account_id(accounts(1)).build());
-
-        let mut contract = StatusMessage::default();
-        contract.set_status("hello".to_string());
-        assert_eq!(
-            "hello".to_string(),
-            contract.get_status(accounts(1)).unwrap()
-        );
-    }
-
-    #[test]
-    fn get_nonexistent_message() {
-        let contract = StatusMessage::default();
-        assert_eq!(None, contract.get_status("francis.near".parse().unwrap()));
     }
 }
