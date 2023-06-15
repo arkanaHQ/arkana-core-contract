@@ -34,6 +34,15 @@ pub struct Reward {
     tickets: TreeMap<u64, AccountId>,
 }
 
+#[derive(Serialize)]
+pub struct RewardOutput {
+    title: String,
+    price: U64,
+    ended_at: U64,
+    total_tickets: U64,
+    winner: Option<AccountId>,
+}
+
 #[derive(BorshDeserialize, BorshSerialize, Serialize)]
 pub struct User {
     points: u64,
@@ -100,10 +109,14 @@ impl ArkanaCoreContract {
     }
 
     #[payable]
-    pub fn buy_ticket(&mut self, reward_id: RewardId, amount: U64) {
+    pub fn buy_ticket(&mut self, reward_id: U64, amount: U64) {
         let predecessor_id = env::predecessor_account_id();
 
-        let mut reward = self.rewards.get(&reward_id).unwrap();
+        let mut reward = self.rewards.get(&reward_id.0).unwrap();
+
+        let current_timestamp = env::block_timestamp_ms();
+
+        assert!(current_timestamp < reward.ended_at, "Reward has ended");
 
         let mut user = self.users.get(&predecessor_id).unwrap();
 
@@ -119,7 +132,7 @@ impl ArkanaCoreContract {
         reward.total_tickets += amount.0;
 
         self.users.insert(&predecessor_id, &user);
-        self.rewards.insert(&reward_id, &reward);
+        self.rewards.insert(&reward_id.0, &reward);
     }
 
     pub fn finalize_reward(&mut self, reward_id: U64) -> AccountId {
@@ -171,11 +184,12 @@ impl ArkanaCoreContract {
         if delta_ms < ONE_DAY {
             panic!(
                 "Cannot claim, please wait {} seconds",
-                milli_to_seconds(delta_ms)
+                milli_to_seconds(ONE_DAY - delta_ms)
             );
         }
 
         user.points += self.daily_claim_points;
+        user.last_daily_claim = current_timestamp;
 
         self.users.insert(&account_id, &user);
 
@@ -195,9 +209,10 @@ impl ArkanaCoreContract {
             if delta_ms < ONE_DAY {
                 panic!(
                     "Cannot play spin wheel for free, please wait {} seconds",
-                    milli_to_seconds(delta_ms)
+                    milli_to_seconds(ONE_DAY - delta_ms)
                 );
             }
+            user.last_free_spinwheel = current_timestamp;
         } else {
             if user.points < self.spin_wheel_price {
                 panic!("Cannot play, user points insufficient");
@@ -223,7 +238,7 @@ impl ArkanaCoreContract {
             cumulative_weights[i] = weights[i] + cumulative_weights[i - 1];
         }
 
-        let total_weights: u16 = weights[5]; // last index
+        let total_weights: u16 = cumulative_weights[5]; // last index
         let random_number = get_random_number(0) as u16 % total_weights;
         let mut result = 0;
 
@@ -291,6 +306,18 @@ impl ArkanaCoreContract {
             last_daily_claim: U64(user.last_daily_claim),
             last_free_spinwheel: U64(user.last_free_spinwheel),
             spinwheel_wr: user.spinwheel_wr,
+        }
+    }
+
+    pub fn get_reward(&self, reward_id: U64) -> RewardOutput {
+        let reward = self.rewards.get(&reward_id.0).unwrap();
+
+        RewardOutput {
+            title: reward.title,
+            price: U64(reward.price),
+            ended_at: U64(reward.ended_at),
+            total_tickets: U64(reward.total_tickets),
+            winner: reward.winner,
         }
     }
 }
