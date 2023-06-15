@@ -125,6 +125,12 @@ impl ArkanaCoreContract {
     pub fn finalize_reward(&mut self, reward_id: U64) -> AccountId {
         let mut reward = self.rewards.get(&reward_id.0).unwrap();
 
+        let current_timestamp = env::block_timestamp_ms();
+
+        if reward.ended_at > current_timestamp {
+            panic!("Reward has not ended");
+        }
+
         let random_number = get_random_number(0) as u64 % reward.total_tickets;
 
         let key_winner = reward.tickets.floor_key(&random_number).unwrap();
