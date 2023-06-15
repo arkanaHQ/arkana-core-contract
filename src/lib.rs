@@ -22,6 +22,7 @@ pub struct ArkanaCoreContract {
     rewards: UnorderedMap<RewardId, Reward>,
     last_reward_id: RewardId,
     membership_contracts: HashSet<AccountId>,
+    spinwheel_wr: u8,
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -48,7 +49,6 @@ pub struct User {
     points: u64,
     last_daily_claim: Timestamp,
     last_free_spinwheel: Timestamp,
-    spinwheel_wr: u8,
 }
 
 #[derive(Serialize)]
@@ -56,7 +56,6 @@ pub struct UserOutput {
     points: U64,
     last_daily_claim: U64,
     last_free_spinwheel: U64,
-    spinwheel_wr: u8,
 }
 
 #[derive(BorshSerialize, BorshStorageKey)]
@@ -78,6 +77,7 @@ impl ArkanaCoreContract {
             rewards: UnorderedMap::new(StorageKey::Rewards),
             last_reward_id: 0,
             membership_contracts: HashSet::new(),
+            spinwheel_wr: 0,
         }
     }
 
@@ -168,7 +168,6 @@ impl ArkanaCoreContract {
                 points: 0,
                 last_daily_claim: 0,
                 last_free_spinwheel: 0,
-                spinwheel_wr: 0,
             },
         );
     }
@@ -226,9 +225,9 @@ impl ArkanaCoreContract {
             50u16,
             80u16,
             70u16,
-            20u16 + (user.spinwheel_wr as u16 * 3) / 10,
-            10u16 + (user.spinwheel_wr as u16 * 2) / 10,
-            2u16 + (user.spinwheel_wr as u16 * 1) / 10,
+            20u16 + (self.spinwheel_wr as u16 * 3) / 10,
+            10u16 + (self.spinwheel_wr as u16 * 2) / 10,
+            2u16 + (self.spinwheel_wr as u16 * 1) / 10,
         ];
 
         let mut cumulative_weights: [u16; 6] = [0; 6];
@@ -250,9 +249,9 @@ impl ArkanaCoreContract {
         }
 
         if result > 5 {
-            user.spinwheel_wr = 0;
+            self.spinwheel_wr = 0;
         } else {
-            user.spinwheel_wr += 1;
+            self.spinwheel_wr += 1;
         }
 
         user.points += result;
@@ -305,7 +304,6 @@ impl ArkanaCoreContract {
             points: U64(user.points),
             last_daily_claim: U64(user.last_daily_claim),
             last_free_spinwheel: U64(user.last_free_spinwheel),
-            spinwheel_wr: user.spinwheel_wr,
         }
     }
 
