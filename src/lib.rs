@@ -109,7 +109,7 @@ impl ArkanaCoreContract {
     }
 
     #[payable]
-    pub fn buy_ticket(&mut self, reward_id: U64, amount: U64) {
+    pub fn buy_ticket(&mut self, reward_id: U64, amount: U64) -> (U64, U64) {
         let predecessor_id = env::predecessor_account_id();
 
         let mut reward = self.rewards.get(&reward_id.0).unwrap();
@@ -133,6 +133,8 @@ impl ArkanaCoreContract {
 
         self.users.insert(&predecessor_id, &user);
         self.rewards.insert(&reward_id.0, &reward);
+
+        (reward_id, amount)
     }
 
     pub fn finalize_reward(&mut self, reward_id: U64) -> AccountId {
