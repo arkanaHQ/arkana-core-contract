@@ -11,6 +11,7 @@ pub type TicketId = String;
 pub type RewardId = u64;
 pub type Points = u64;
 pub const ONE_DAY: u64 = 86400000;
+pub const INIT_POINT: u64 = 25;
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -169,7 +170,7 @@ impl ArkanaCoreContract {
         self.users.insert(
             &predecessor_id,
             &User {
-                points: 0,
+                points: INIT_POINT,
                 last_daily_claim: 0,
                 last_free_spinwheel: 0,
             },
