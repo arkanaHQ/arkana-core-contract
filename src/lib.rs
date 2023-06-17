@@ -138,15 +138,19 @@ impl ArkanaCoreContract {
         (reward_id, amount)
     }
 
-    pub fn finalize_reward(&mut self, reward_id: U64) -> AccountId {
+    pub fn finalize_reward(&mut self, reward_id: U64, force: bool) -> AccountId {
         let mut reward = self.rewards.get(&reward_id.0).unwrap();
 
-        let current_timestamp = env::block_timestamp_ms();
+        let predecessor_id = env::predecessor_account_id();
 
-        assert!(reward.winner.is_none(), "Reward finalized");
+        if !force || predecessor_id != self.owner {
+            let current_timestamp = env::block_timestamp_ms();
 
-        if reward.ended_at > current_timestamp {
-            panic!("Reward has not ended");
+            assert!(reward.winner.is_none(), "Reward finalized");
+
+            if reward.ended_at > current_timestamp {
+                panic!("Reward has not ended");
+            }
         }
 
         let random_number = get_random_number(0) as u64 % reward.total_tickets;
@@ -155,7 +159,6 @@ impl ArkanaCoreContract {
         let winner = reward.tickets.get(&key_winner).unwrap();
 
         reward.winner = Some(winner.clone());
-        reward.tickets.clear();
 
         return winner;
     }
