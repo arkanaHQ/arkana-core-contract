@@ -200,7 +200,7 @@ impl ArkanaCoreContract {
 
         self.users.insert(&account_id, &user);
 
-        user.points
+        self.daily_claim_points
     }
 
     #[payable]
